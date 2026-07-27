@@ -1,7 +1,10 @@
 /* WAVE — deployment configuration.
  *
- * Put your Google Drive API key here and WAVE needs nothing from its visitors:
- * they open a link and it plays. No sign-in, no consent screen, no setup.
+ * On GitHub Pages, .github/workflows/deploy.yml overwrites the apiKey below
+ * with the DRIVE_API_KEY repository secret at build time, so visitors get a
+ * working key with no setup and it never appears in source control.
+ *
+ * For local development, set it here instead:
  *
  *   WAVE.config = { apiKey: 'AIzaSy…' };
  *
@@ -20,15 +23,14 @@
  * protecting. If someone starts burning it, rotate the key — it's one click.
  *
  * Left empty, WAVE asks for a key in its setup panel and remembers it in that
- * browser. Convenient while developing; set it here before you share the link.
+ * browser. Convenient while developing.
  *
  * Adding an origin: put it in Website restrictions in the console, or requests
  * from it come back 403 "Requests from referer … are blocked".
  */
 window.WAVE = window.WAVE || {};
 WAVE.config = {
-  // Restricted to the Google Drive API, and to the origins this is served from
-  // (thomasbrueggemann.github.io and localhost:8123). Requests from anywhere
-  // else are refused by Google.
-  apiKey: 'AIzaSyAPJluatEwdR2cTcR3qM4oHjNNzps39ejk'
+  // Injected at GitHub Pages build time from the DRIVE_API_KEY repo secret
+  // (see .github/workflows/deploy.yml). Empty here in source control.
+  apiKey: ''
 };
