@@ -128,8 +128,7 @@ WAVE.drive = (function () {
         pageSize: '1000',
         orderBy: 'name_natural',
         supportsAllDrives: 'true',
-        includeItemsFromAllDrives: 'true',
-        corpora: 'allDrives'
+        includeItemsFromAllDrives: 'true'
       };
       if (token) params.pageToken = token;
       return api('/files', params).then(function (res) {
