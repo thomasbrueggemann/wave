@@ -6,39 +6,41 @@ WAVE.waveform = (function () {
 
   var BUCKETS = 16384; // fixed high-res peak cache; drawing downsamples from it
 
-  // Mixes all channels down and reduces to min/max pairs per bucket.
+  // Reduces each channel to its own min/max/rms per bucket, so stereo files can
+  // be drawn as a pair of lanes instead of a mixdown.
   function computePeaks(buffer, buckets) {
     buckets = buckets || BUCKETS;
     var len = buffer.length;
-    var chans = [];
-    for (var c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
-    var nch = chans.length;
-
-    var min = new Float32Array(buckets);
-    var max = new Float32Array(buckets);
-    var rms = new Float32Array(buckets);
     var step = len / buckets;
+    var channels = [];
 
-    for (var b = 0; b < buckets; b++) {
-      var from = Math.floor(b * step);
-      var to = Math.min(len, Math.floor((b + 1) * step));
-      if (to <= from) to = Math.min(len, from + 1);
+    for (var c = 0; c < buffer.numberOfChannels; c++) {
+      var data = buffer.getChannelData(c);
+      var min = new Float32Array(buckets);
+      var max = new Float32Array(buckets);
+      var rms = new Float32Array(buckets);
 
-      var lo = 0, hi = 0, sum = 0, n = 0;
-      for (var i = from; i < to; i++) {
-        var v = 0;
-        for (var k = 0; k < nch; k++) v += chans[k][i];
-        v /= nch;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-        sum += v * v;
-        n++;
+      for (var b = 0; b < buckets; b++) {
+        var from = Math.floor(b * step);
+        var to = Math.min(len, Math.floor((b + 1) * step));
+        if (to <= from) to = Math.min(len, from + 1);
+
+        var lo = 0, hi = 0, sum = 0, n = 0;
+        for (var i = from; i < to; i++) {
+          var v = data[i];
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+          sum += v * v;
+          n++;
+        }
+        min[b] = lo;
+        max[b] = hi;
+        rms[b] = n ? Math.sqrt(sum / n) : 0;
       }
-      min[b] = lo;
-      max[b] = hi;
-      rms[b] = n ? Math.sqrt(sum / n) : 0;
+      channels.push({ min: min, max: max, rms: rms });
     }
-    return { min: min, max: max, rms: rms, buckets: buckets };
+
+    return { channels: channels, buckets: buckets };
   }
 
   // Draws `peaks` into the first `opts.spanPx` pixels of the canvas. The canvas
@@ -54,15 +56,31 @@ WAVE.waveform = (function () {
 
     // background + centre line, drawn only where the stem actually exists
     if (opts.bg) { ctx.fillStyle = opts.bg; ctx.fillRect(0, 0, w, h); }
-    var mid = h / 2;
+    if (!peaks || !peaks.channels || !peaks.channels.length) {
+      ctx.fillStyle = opts.grid || 'rgba(255,255,255,.06)';
+      ctx.fillRect(0, Math.round(h / 2), w, 1);
+      return;
+    }
+
+    // Each channel gets its own horizontal band; a mono file still fills the lane.
+    var chans = peaks.channels;
+    var nch = chans.length;
+    var bandH = h / nch;
+    for (var c = 0; c < nch; c++) {
+      if (c > 0) {
+        ctx.fillStyle = opts.grid || 'rgba(255,255,255,.06)';
+        ctx.fillRect(0, Math.round(c * bandH), w, 1);
+      }
+      drawChannel(ctx, chans[c], peaks.buckets, w, c * bandH + bandH / 2, bandH, opts);
+    }
+  }
+
+  function drawChannel(ctx, ch, B, w, mid, bandH, opts) {
+    var perPx = B / w;
+    var amp = (bandH / 2) * 0.94;
+
     ctx.fillStyle = opts.grid || 'rgba(255,255,255,.06)';
     ctx.fillRect(0, Math.round(mid), w, 1);
-
-    if (!peaks) return;
-
-    var B = peaks.buckets;
-    var perPx = B / w;
-    var amp = (h / 2) * 0.94;
 
     // outer envelope
     ctx.fillStyle = opts.color || '#4aa8ff';
@@ -74,8 +92,8 @@ WAVE.waveform = (function () {
 
       var lo = 0, hi = 0;
       for (var b = from; b < to; b++) {
-        if (peaks.min[b] < lo) lo = peaks.min[b];
-        if (peaks.max[b] > hi) hi = peaks.max[b];
+        if (ch.min[b] < lo) lo = ch.min[b];
+        if (ch.max[b] > hi) hi = ch.max[b];
       }
       var y0 = mid - hi * amp;
       var y1 = mid - lo * amp;
@@ -91,7 +109,7 @@ WAVE.waveform = (function () {
       if (t2 <= f2) t2 = f2 + 1;
       if (t2 > B) t2 = B;
       var s = 0, n = 0;
-      for (var b2 = f2; b2 < t2; b2++) { s += peaks.rms[b2]; n++; }
+      for (var b2 = f2; b2 < t2; b2++) { s += ch.rms[b2]; n++; }
       var r = n ? (s / n) * amp : 0;
       if (r < 0.5) continue;
       ctx.fillRect(x2, mid - r, 1, r * 2);
