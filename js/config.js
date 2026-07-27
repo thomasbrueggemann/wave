@@ -21,8 +21,14 @@
  *
  * Left empty, WAVE asks for a key in its setup panel and remembers it in that
  * browser. Convenient while developing; set it here before you share the link.
+ *
+ * Adding an origin: put it in Website restrictions in the console, or requests
+ * from it come back 403 "Requests from referer … are blocked".
  */
 window.WAVE = window.WAVE || {};
 WAVE.config = {
-  apiKey: ''
+  // Restricted to the Google Drive API, and to the origins this is served from
+  // (thomasbrueggemann.github.io and localhost:8123). Requests from anywhere
+  // else are refused by Google.
+  apiKey: 'AIzaSyAPJluatEwdR2cTcR3qM4oHjNNzps39ejk'
 };
