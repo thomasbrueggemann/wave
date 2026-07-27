@@ -99,30 +99,6 @@ input::placeholder{color:var(--fg-faint); font-family:inherit}
 .panel.error{border-color:#5b2b2b; background:#1c1315}
 .panel.error h2{color:var(--danger)}
 
-.err{
-  color:var(--danger); font-size:13px;
-  background:#1c1315; border:1px solid #5b2b2b;
-  border-radius:7px; padding:9px 12px;
-}
-
-.btn.google{display:inline-flex; align-items:center; gap:9px; padding:10px 18px; font-size:14px}
-.btn.google .g{
-  display:inline-flex; align-items:center; justify-content:center;
-  width:19px; height:19px; border-radius:50%;
-  background:#fff; color:#4285f4; font-weight:700; font-size:12px;
-}
-
-#client-config{
-  margin-top:18px; padding-top:14px; border-top:1px solid var(--line);
-}
-#client-config summary{
-  cursor:pointer; color:var(--fg-dim); font-size:12px;
-  text-transform:uppercase; letter-spacing:.07em; user-select:none;
-}
-#client-config summary:hover{color:var(--fg)}
-#client-config > *:not(summary){margin-top:12px}
-#client-config .steps{font-size:13px}
-
 .loadlist{list-style:none; margin:12px 0 0; padding:0}
 .loadlist li{
   display:flex; align-items:center; gap:10px;

@@ -1,22 +1,28 @@
 /* WAVE — deployment configuration.
  *
- * Put your Google OAuth **client ID** here and visitors never see a setup step:
- * they just click "Sign in with Google".
+ * Put your Google Drive API key here and WAVE needs nothing from its visitors:
+ * they open a link and it plays. No sign-in, no consent screen, no setup.
  *
- *   WAVE.config = { clientId: '1234567890-abcdef.apps.googleusercontent.com' };
+ *   WAVE.config = { apiKey: 'AIzaSy…' };
  *
- * A client ID is public by design — it's safe to commit and safe to serve. It is
- * not a secret, and this flow has no client secret at all.
+ * A browser API key is meant to be public. It reads only files that are already
+ * shared as "Anyone with the link", so it exposes nothing that isn't public
+ * already — it can't reach anything private in your Drive. Restrict it anyway:
  *
- * Create one at https://console.cloud.google.com/apis/credentials
- *   → Create credentials → OAuth client ID → Web application
- *   → add every origin WAVE is served from under "Authorized JavaScript origins"
- *     (e.g. http://localhost:8123 and https://your-host)
+ *   https://console.cloud.google.com/apis/credentials
+ *     → Create credentials → API key
+ *     → API restrictions:     Google Drive API only
+ *     → Website restrictions: the origins WAVE is served from, e.g.
+ *                             https://thomasbrueggemann.github.io/*
  *
- * Left empty, WAVE asks for the client ID in its setup panel and remembers it in
- * this browser — handy while developing, but set it here before you deploy.
+ * Referrer restrictions are a browser-level control and can be spoofed by a
+ * non-browser client, so treat the key as quota (not data) that's worth
+ * protecting. If someone starts burning it, rotate the key — it's one click.
+ *
+ * Left empty, WAVE asks for a key in its setup panel and remembers it in that
+ * browser. Convenient while developing; set it here before you share the link.
  */
 window.WAVE = window.WAVE || {};
 WAVE.config = {
-  clientId: ''
+  apiKey: ''
 };

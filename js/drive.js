@@ -1,13 +1,13 @@
 /* WAVE — Google Drive access.
  *
  * Everything here goes through the public Drive v3 REST API on googleapis.com,
- * which is the only Drive surface that sends CORS headers. The classic share
- * hosts (drive.google.com, docs.google.com) do not, so they cannot be fetched
- * from a static page at all.
+ * which is the only Drive surface that sends CORS headers — verified: it
+ * reflects the requesting origin in access-control-allow-origin. The classic
+ * download hosts (drive.google.com/uc, drive.usercontent.google.com) send no
+ * CORS header at all, so a static page cannot read them.
  *
- * Requests are authorised with the signed-in user's OAuth access token. A 401
- * means the token went stale mid-session, so each call refreshes once and
- * retries before giving up.
+ * Requests are identified by a browser API key, which is enough for files
+ * shared as "Anyone with the link" — no user, no sign-in.
  */
 window.WAVE = window.WAVE || {};
 
@@ -15,15 +15,31 @@ WAVE.drive = (function () {
   'use strict';
 
   var API = 'https://www.googleapis.com/drive/v3';
+  var KEY_STORE = 'wave.apiKey';
 
   var AUDIO_EXT = [
     'wav', 'wave', 'mp3', 'flac', 'ogg', 'oga', 'opus',
     'm4a', 'mp4', 'aac', 'aif', 'aiff', 'aifc', 'caf', 'weba', 'webm'
   ];
 
-  // Injected by the app so this module doesn't depend on the auth module directly.
-  var tokenProvider = function () { return Promise.reject(new Error('Not signed in.')); };
-  function setTokenProvider(fn) { tokenProvider = fn; }
+  function ls(fn, dflt) { try { return fn(); } catch (e) { return dflt; } }
+
+  /* ── key ─────────────────────────────────────────────── */
+
+  // config.js wins; otherwise fall back to whatever this browser was given.
+  function getKey() {
+    var cfg = (WAVE.config && WAVE.config.apiKey || '').trim();
+    return cfg || ls(function () { return localStorage.getItem(KEY_STORE) || ''; }, '');
+  }
+  function setKey(k) {
+    ls(function () {
+      if (k) localStorage.setItem(KEY_STORE, k);
+      else localStorage.removeItem(KEY_STORE);
+    });
+  }
+  function configuredInCode() {
+    return !!(WAVE.config && (WAVE.config.apiKey || '').trim());
+  }
 
   /* ── url parsing ─────────────────────────────────────── */
 
@@ -63,37 +79,34 @@ WAVE.drive = (function () {
     try { msg = (JSON.parse(body).error || {}).message || ''; } catch (e) {}
 
     if (status === 404) {
-      return 'Not found. Your Google account has to be able to open it — either the share is ' +
-             '“Anyone with the link”, or the folder is shared with you directly. Also check the link itself.';
+      return 'Not found. An API key can only read files shared as “Anyone with the link” — ' +
+             'check the sharing setting on the folder, and that the link is right. ' +
+             'Folders shared privately with you can\'t be opened this way.';
     }
     if (status === 403) {
+      if (/API key not valid|expired|invalid/i.test(msg)) return 'The API key was rejected: ' + msg;
       if (/has not been used|disabled/i.test(msg)) {
-        return 'The Drive API is not enabled for this app\'s Cloud project. Enable “Google Drive API” there. (' + msg + ')';
+        return 'The Drive API is not enabled for this key\'s project. Enable “Google Drive API” in the Cloud console. (' + msg + ')';
       }
-      if (/insufficient|scope/i.test(msg)) {
-        return 'The sign-in didn\'t grant Drive read access. Sign out and back in, and accept the permission. (' + msg + ')';
+      if (/referer|referrer|blocked|not authorized/i.test(msg)) {
+        return 'The key\'s website restrictions don\'t allow ' + location.origin + '. ' +
+               'Add it in the Cloud console under the key\'s Website restrictions. (' + msg + ')';
       }
+      if (/quota|rate/i.test(msg)) return 'The key is out of quota for now: ' + msg;
       return 'Access denied' + (msg ? ': ' + msg : '.');
     }
+    if (status === 400 && /API key/i.test(msg)) return 'Invalid API key: ' + msg;
+    if (status === 401) return 'The request was rejected as unauthenticated — the API key is missing or wrong.';
     return 'Drive returned ' + status + (msg ? ': ' + msg : '');
-  }
-
-  // Runs `attempt(token)`; on 401 refreshes the token once and runs it again.
-  function withAuth(attempt) {
-    return tokenProvider(false).then(attempt).then(function (r) {
-      if (r.status !== 401) return r;
-      return tokenProvider(true).then(attempt);
-    });
   }
 
   function api(path, params) {
     var q = Object.keys(params).map(function (k) {
       return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-    }).join('&');
+    });
+    q.push('key=' + encodeURIComponent(getKey()));
 
-    return withAuth(function (token) {
-      return fetch(API + path + '?' + q, { headers: { Authorization: 'Bearer ' + token } });
-    }).then(function (r) {
+    return fetch(API + path + '?' + q.join('&')).then(function (r) {
       if (r.ok) return r.json();
       return r.text().then(function (t) { throw new Error(describeError(r.status, t)); });
     });
@@ -155,11 +168,10 @@ WAVE.drive = (function () {
 
   // Resolves to an ArrayBuffer. onProgress(loadedBytes, totalBytesOrNull).
   function download(id, onProgress) {
-    var url = API + '/files/' + encodeURIComponent(id) + '?alt=media&supportsAllDrives=true';
+    var url = API + '/files/' + encodeURIComponent(id) +
+              '?alt=media&supportsAllDrives=true&key=' + encodeURIComponent(getKey());
 
-    return withAuth(function (token) {
-      return fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-    }).then(function (r) {
+    return fetch(url).then(function (r) {
       if (!r.ok) return r.text().then(function (t) { throw new Error(describeError(r.status, t)); });
 
       var total = Number(r.headers.get('content-length')) || null;
@@ -184,7 +196,9 @@ WAVE.drive = (function () {
   }
 
   return {
-    setTokenProvider: setTokenProvider,
+    getKey: getKey,
+    setKey: setKey,
+    configuredInCode: configuredInCode,
     parseShareUrl: parseShareUrl,
     getMeta: getMeta,
     listAudioFiles: listAudioFiles,

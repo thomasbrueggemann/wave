@@ -3,7 +3,6 @@
   'use strict';
 
   var drive = WAVE.drive;
-  var auth = WAVE.auth;
   var wf = WAVE.waveform;
 
   var HEAD_W = 268;      // keep in sync with --head-w
@@ -14,11 +13,8 @@
   var $ = function (s) { return document.querySelector(s); };
   var el = {
     sourceForm: $('#source-form'), sourceUrl: $('#source-url'),
-    authBtn: $('#auth-btn'), setup: $('#setup'),
-    signinBtn: $('#signin-btn'), authError: $('#auth-error'),
-    clientConfig: $('#client-config'), clientForm: $('#client-form'),
-    clientId: $('#client-id'), clientClear: $('#client-clear'),
-    originHint: $('#origin-hint'),
+    keyBtn: $('#key-btn'), setup: $('#setup'), keyForm: $('#key-form'),
+    apiKey: $('#api-key'), keyClear: $('#key-clear'), originHint: $('#origin-hint'),
     status: $('#status'), statusTitle: $('#status-title'),
     statusMsg: $('#status-msg'), statusList: $('#status-list'),
     empty: $('#empty'), daw: $('#daw'),
@@ -107,71 +103,29 @@
     var next = on == null ? el.setup.hidden : on;
     show(el.setup, next);
     if (next) {
-      el.clientId.value = auth.clientId();
-      // The client ID is a one-time deployment setting; only nag about it when
-      // it hasn't been baked into config.js.
-      show(el.clientConfig, !auth.configuredInCode());
-      el.clientConfig.open = !auth.clientId();
-      el.originHint.textContent = location.origin;
+      el.apiKey.value = drive.getKey();
+      el.originHint.textContent = location.origin + '/*';
+      el.apiKey.focus();
     }
   }
 
-  function authMessage(msg) {
-    el.authError.textContent = msg || '';
-    show(el.authError, !!msg);
-  }
+  // The key is a one-time deployment setting — hide the entry point entirely
+  // once it's baked into config.js.
+  show(el.keyBtn, !drive.configuredInCode());
 
-  /* ── auth ────────────────────────────────────────────── */
+  el.keyBtn.addEventListener('click', function () { toggleSetup(null); });
 
-  drive.setTokenProvider(function (force) { return auth.ensureToken(force); });
-
-  auth.onChange(function (state) {
-    el.authBtn.textContent = state.signedIn ? 'Sign out' : 'Sign in';
-  });
-
-  el.authBtn.addEventListener('click', function () {
-    if (auth.isSignedIn()) {
-      auth.signOut();
-      teardown();
-      show(el.empty, true);
-      show(el.status, false);
-      document.title = 'WAVE';
-      return;
-    }
-    toggleSetup(true);
-    el.signinBtn.focus();
-  });
-
-  el.signinBtn.addEventListener('click', function () {
-    authMessage('');
-    show(el.status, false); // the "sign in to open this link" nudge has served its purpose
-    if (!auth.clientId()) {
-      authMessage('No OAuth client ID configured yet — set one below.');
-      el.clientConfig.open = true;
-      return;
-    }
-    el.signinBtn.disabled = true;
-    auth.signIn()
-      .then(function () {
-        toggleSetup(false);
-        var src = el.sourceUrl.value.trim() || urlFromHash();
-        if (src) load(src);
-        else { show(el.status, false); show(el.empty, true); }
-      })
-      .catch(function (err) { authMessage(err.message || String(err)); })
-      .then(function () { el.signinBtn.disabled = false; });
-  });
-
-  el.clientForm.addEventListener('submit', function (e) {
+  el.keyForm.addEventListener('submit', function (e) {
     e.preventDefault();
-    auth.setClientId(el.clientId.value.trim());
-    authMessage('');
-    if (auth.clientId()) el.clientConfig.open = false;
+    drive.setKey(el.apiKey.value.trim());
+    toggleSetup(false);
+    var src = el.sourceUrl.value.trim() || urlFromHash();
+    if (drive.getKey() && src) load(src);
   });
 
-  el.clientClear.addEventListener('click', function () {
-    auth.setClientId('');
-    el.clientId.value = '';
+  el.keyClear.addEventListener('click', function () {
+    drive.setKey('');
+    el.apiKey.value = '';
   });
 
   /* ── loading ─────────────────────────────────────────── */
@@ -218,8 +172,9 @@
     writeHash(src);
     el.sourceUrl.value = src;
 
-    if (!auth.isSignedIn()) {
-      showError('Sign in first', 'WAVE reads Drive as you, so it needs you signed in to Google.');
+    if (!drive.getKey()) {
+      showError('No Drive API key configured',
+        'WAVE identifies itself to the Drive API with a key. Open “API key” above to set one.');
       toggleSetup(true);
       return;
     }
@@ -655,16 +610,11 @@
     var src = urlFromHash();
     if (src) el.sourceUrl.value = src;
 
-    // If this browser has granted access before, Google can usually hand back a
-    // token without any UI — so a shared WAVE link just opens.
-    auth.resume().then(function (token) {
-      if (token && src) { load(src); return; }
-      if (token) return;
-      if (src) {
-        showError('Sign in to open this link',
-          'This WAVE session is ready to load — it just needs you signed in to Google.');
-      }
+    if (drive.getKey()) {
+      // With a key in config.js this is the whole story: a shared link just opens.
+      if (src) load(src);
+    } else {
       toggleSetup(true);
-    });
+    }
   })();
 })();

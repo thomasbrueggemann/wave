@@ -18,49 +18,37 @@
     <button type="submit" class="btn primary">Load</button>
   </form>
 
-  <button id="auth-btn" class="btn ghost" type="button">Sign in</button>
+  <button id="key-btn" class="btn ghost" type="button" title="Drive API key">API key</button>
 </header>
 
-<!-- ── sign-in / setup panel ─────────────────────────────────────────── -->
+<!-- ── setup panel ───────────────────────────────────────────────────── -->
 <section id="setup" class="panel" hidden>
-  <h2>Sign in with Google</h2>
+  <h2>Drive API key</h2>
   <p class="muted">
-    WAVE reads Drive straight from your browser, so it needs your permission to do that —
-    read-only, and only while this tab is open. The access token is kept in memory and
-    never stored; nothing is sent anywhere but Google.
+    WAVE reads Drive straight from your browser. Google's share hosts don't allow that, so
+    requests go to the Drive API instead — which identifies the app with a key. There's no
+    sign-in and no account involved: the key only reads files already shared as
+    <strong>“Anyone with the link”</strong>.
   </p>
-
-  <p>
-    <button id="signin-btn" class="btn primary google" type="button">
-      <span class="g">G</span> Sign in with Google
-    </button>
+  <p class="muted">
+    Set <code>apiKey</code> in <code>js/config.js</code> and this panel never appears for
+    anyone. Until then, paste a key here and this browser will remember it.
   </p>
-  <p id="auth-error" class="err" hidden></p>
-
+  <ol class="steps">
+    <li>Open the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud console → Credentials</a> and create (or pick) a project.</li>
+    <li>Enable the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API</a> for that project.</li>
+    <li><em>Create credentials → API key</em>. Restrict it to the Drive API, and add
+        <code id="origin-hint">this page's origin</code> under <em>Website restrictions</em>.</li>
+  </ol>
+  <form id="key-form" class="key-form" autocomplete="off">
+    <input id="api-key" type="text" spellcheck="false" placeholder="AIzaSy…">
+    <button type="submit" class="btn primary">Save</button>
+    <button type="button" id="key-clear" class="btn ghost">Clear</button>
+  </form>
   <p class="fineprint">
-    Signing in lets WAVE open anything <em>your</em> account can already open — public
-    “Anyone with the link” shares as well as folders shared with you directly.
+    A browser key is meant to be public — it can't reach anything private in your Drive.
+    Restrict it to your own origins so it can't be used to burn your quota elsewhere.
   </p>
-
-  <details id="client-config">
-    <summary>Deployment setting — OAuth client ID</summary>
-    <p class="muted">
-      Set <code>clientId</code> in <code>js/config.js</code> and this section disappears for
-      everyone. Until then, paste the client ID here and this browser will remember it.
-      A client ID is public by design — there's no client secret in this flow.
-    </p>
-    <ol class="steps">
-      <li>Open the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud console → Credentials</a> and create (or pick) a project.</li>
-      <li>Enable the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API</a>.</li>
-      <li>Configure the OAuth consent screen. While the app is unverified, add your own Google account under <em>Test users</em>.</li>
-      <li><em>Create credentials → OAuth client ID → Web application</em>. Add <code id="origin-hint">this page's origin</code> under <em>Authorized JavaScript origins</em>.</li>
-    </ol>
-    <form id="client-form" class="key-form" autocomplete="off">
-      <input id="client-id" type="text" spellcheck="false" placeholder="1234567890-abcdef.apps.googleusercontent.com">
-      <button type="submit" class="btn primary">Save</button>
-      <button type="button" id="client-clear" class="btn ghost">Clear</button>
-    </form>
-  </details>
 </section>
 
 <!-- ── status / loading ──────────────────────────────────────────────── -->
@@ -74,8 +62,8 @@
 <section id="empty" class="panel empty">
   <h1>Drop a Drive link, get a mixer.</h1>
   <p class="muted">
-    Sign in, paste a share link to a <strong>folder of stems</strong>, and every audio file is
-    laid out as a track — stacked, sample-aligned, one transport, one master bus.
+    Paste a share link to a <strong>folder of stems</strong> and every audio file is laid out
+    as a track — stacked, sample-aligned, one transport, one master bus.
     Paste a link to a <strong>single file</strong> and you get a single track.
   </p>
   <p class="muted">The link is stored in this page's URL, so a reload restores the session and the page is shareable.</p>
@@ -123,9 +111,7 @@
   </div>
 </main>
 
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="js/config.js"></script>
-<script src="js/auth.js"></script>
 <script src="js/drive.js"></script>
 <script src="js/waveform.js"></script>
 <script src="js/audio.js"></script>

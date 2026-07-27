@@ -2,9 +2,8 @@
 
 A static HTML5 page that turns a Google Drive share link into a DAW-style stem player.
 
-Sign in with Google, paste a link to a **folder**, and every audio file in it becomes a track
-— stacked, on one shared timeline, sample-aligned, all playing together into a single master
-bus. Paste a link to a **single file** and you get a single track. The link lives in the page
+Paste a link to a **folder** and every audio file in it becomes a track — stacked, on one
+shared timeline, sample-aligned, all playing together into a single master bus. Paste a link to a **single file** and you get a single track. The link lives in the page
 URL, so a reload restores the session and the page is shareable.
 
 ## Running it
@@ -15,56 +14,61 @@ It's static — no build step, no server code.
 python3 -m http.server 8123
 ```
 
-Then open <http://localhost:8123>. Any static host works too (GitHub Pages, Netlify, S3) — as
-long as you register its origin with the OAuth client (see below).
+Then open <http://localhost:8123>. Any static host works too (GitHub Pages, Netlify, S3) — add
+its origin to the API key's website restrictions (see below).
 
-## Sign-in
+Opening `index.html` straight from disk (`file://`) also works, since everything loads as
+classic scripts rather than ES modules.
 
-Visitors click **Sign in with Google** and that's it. Google Identity Services' token flow
-runs entirely in the browser — no backend, no client secret. The access token is held in
-memory only, never written to storage, and every Drive request carries it as a bearer token.
+## No sign-in — just a key
 
-Drive's share hosts (`drive.google.com`, `docs.google.com`) send no CORS headers, so a static
-page can't fetch from them at all; `googleapis.com/drive/v3` is the only browser-reachable
-Drive surface, and it needs authorisation.
+Visitors do nothing. They open a WAVE link and it plays.
 
-Because WAVE reads Drive *as you*, it opens anything your account can already open — public
-“Anyone with the link” shares **and** folders shared with you directly.
+That's possible because a Drive **API key** identifies the *app*, not a user, and it's enough
+to read anything shared as “Anyone with the link”. Put the key in
+[`js/config.js`](js/config.js) and the setup panel never appears for anyone.
+
+A browser can't skip credentials entirely, though — that part is not a choice:
+
+| Host | CORS | Usable from a static page |
+|---|---|---|
+| `drive.google.com/uc?export=download` | no `access-control-allow-origin` | ✗ |
+| `drive.usercontent.google.com/download` | no `access-control-allow-origin` | ✗ |
+| `googleapis.com/drive/v3` | reflects the requesting origin | ✓ (needs a key) |
+
+Without a key that last one answers *“The request is missing a valid API key.”* There is also
+no unauthenticated way to list a folder's contents at all. So: no login required, one key
+required.
 
 ### One-time setup (you, not your visitors)
 
 1. [Google Cloud console → Credentials](https://console.cloud.google.com/apis/credentials) — create or pick a project.
-2. Enable the [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com).
-3. Configure the OAuth consent screen. While the app is unverified, add each Google account that will use it under **Test users**.
-4. *Create credentials → OAuth client ID → Web application*. Add every origin WAVE is served from under **Authorized JavaScript origins** — e.g. `http://localhost:8123` and `https://your-host`.
-5. Put the client ID in [`js/config.js`](js/config.js).
+2. Enable the [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com) for it.
+3. *Create credentials → API key*.
+4. Restrict it — **API restrictions** to Google Drive API, **Website restrictions** to the origins WAVE is served from (e.g. `https://you.github.io/*`, `http://localhost:8123/*`).
+5. Put it in [`js/config.js`](js/config.js).
 
-A client ID is public by design — safe to commit, safe to serve. There is no secret in this
-flow. If you leave `config.js` empty, WAVE asks for the client ID in its setup panel and
-remembers it in that browser, which is convenient while developing.
+Leave `config.js` empty and WAVE asks for a key in its setup panel and remembers it in that
+browser — handy while developing.
 
-Because OAuth requires registered JavaScript origins, WAVE must now be **served over http(s)** —
-opening `index.html` from `file://` no longer works for signing in.
+### Is committing the key safe?
 
-### The verification ceiling
+Yes, with the caveat below. A browser API key is designed to ship in page source. It reads
+only files that are *already* public, so it exposes nothing that wasn't exposed already, and
+it cannot reach anything private in your Drive.
 
-WAVE uses the `drive.readonly` scope, which Google classifies as **restricted**. Unverified,
-that's capped at 100 manually-added test users and shows an "unverified app" warning — fine
-for personal or band-sized use. Publishing it beyond that requires Google verification plus a
-third-party CASA security assessment, repeated annually.
+The caveat is quota, not data: referrer restrictions are enforced by browsers and can be
+spoofed by a non-browser client, so a copied key could burn your free Drive quota. If that
+ever happens, rotate the key — one click, one commit.
 
-The way out, if you ever need it, is the Google Picker with the non-sensitive `drive.file`
-scope — but that trades "paste a link" for "browse and pick", so it changes the product.
+### What this costs you
 
-### Sessions
-
-Signing out drops the token locally and clears the tracks; the grant itself stays, so signing
-back in is one click. Revoke it entirely at
-[myaccount.google.com/permissions](https://myaccount.google.com/permissions).
-
-On reload, WAVE asks Google for a token without prompting. That succeeds while the grant and
-your Google session are live; if Google can't do it silently, WAVE falls back to the sign-in
-button with the link preserved.
+Only link-public folders work. A folder shared *privately* with you can't be opened, because
+there's no user in the picture to have that access. The alternative — OAuth sign-in — was
+built and then removed: with the restricted `drive.readonly` scope, every recipient of a
+shared link would have to be added by hand to a 100-person test-user list and click through an
+"unverified app" warning, which defeats the point of a shareable link. Going beyond that needs
+Google verification plus an annual paid CASA security assessment.
 
 ## Sharing
 
@@ -103,11 +107,10 @@ folder of long WAVs is correspondingly heavy on RAM.
 ## Layout
 
 ```
-index.html        markup and the sign-in/status panels
+index.html        markup and the setup/status panels
 styles.css        dark DAW theme; --head-w / --lane-h / --ruler-h drive the layout
-js/config.js      your OAuth client ID
-js/auth.js        Google sign-in: token acquisition, silent resume, refresh, sign-out
-js/drive.js       Drive v3 access: URL parsing, folder walk, download, 401 retry
+js/config.js      your Drive API key
+js/drive.js       Drive v3 access: URL parsing, folder walk, download, error messages
 js/waveform.js    peak extraction and canvas rendering (waveforms + time ruler)
 js/audio.js       the mix engine: buffers → gain → pan → analyser → master, and transport
 js/app.js         UI, layout, zoom, transport wiring, URL state
