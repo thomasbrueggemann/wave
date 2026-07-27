@@ -19,7 +19,7 @@
     statusMsg: $('#status-msg'), statusList: $('#status-list'),
     empty: $('#empty'), daw: $('#daw'),
     btnStart: $('#btn-start'), btnPlay: $('#btn-play'),
-    btnStop: $('#btn-stop'), btnLoop: $('#btn-loop'),
+    btnStop: $('#btn-stop'), btnLoop: $('#btn-loop'), btnReload: $('#btn-reload'),
     timePos: $('#time-pos'), timeDur: $('#time-dur'),
     masterVol: $('#master-vol'), masterDb: $('#master-db'),
     masterMeter: $('.master-meter'),
@@ -158,7 +158,12 @@
       },
       set: function (txt, cls) {
         li.querySelector('.st').textContent = txt;
-        if (cls) li.classList.add(cls);
+        if (cls) {
+          li.classList.remove('decoding');
+          li.classList.add(cls);
+        } else if (txt === 'decoding') {
+          li.classList.add('decoding');
+        }
         if (cls === 'done') li.querySelector('.bar i').style.width = '100%';
       }
     };
@@ -320,19 +325,21 @@
     node.className = 'row track-row';
     node.innerHTML =
       '<div class="head">' +
-        '<div class="t-top">' +
-          '<span class="t-num"></span>' +
-          '<span class="t-name"></span>' +
-          '<button class="t-btn m" title="Mute">M</button>' +
-          '<button class="t-btn s" title="Solo">S</button>' +
+        '<div class="h-controls">' +
+          '<div class="t-top">' +
+            '<span class="t-num"></span>' +
+            '<span class="t-name"></span>' +
+            '<button class="t-btn m" title="Mute">M</button>' +
+            '<button class="t-btn s" title="Solo">S</button>' +
+          '</div>' +
+          '<div class="t-row"><span class="lbl">Vol</span>' +
+            '<input class="vol" type="range" min="-60" max="6" step="0.5" value="0" disabled>' +
+            '<span class="val vval">0.0 dB</span></div>' +
+          '<div class="t-row"><span class="lbl">Pan</span>' +
+            '<input class="pan" type="range" min="-1" max="1" step="0.01" value="0" disabled>' +
+            '<span class="val pval">C</span></div>' +
+          '<div class="t-meta"><span class="mi">loading…</span></div>' +
         '</div>' +
-        '<div class="t-row"><span class="lbl">Vol</span>' +
-          '<input class="vol" type="range" min="-60" max="6" step="0.5" value="0" disabled>' +
-          '<span class="val vval">0.0 dB</span></div>' +
-        '<div class="t-row"><span class="lbl">Pan</span>' +
-          '<input class="pan" type="range" min="-1" max="1" step="0.01" value="0" disabled>' +
-          '<span class="val pval">C</span></div>' +
-        '<div class="t-meta"><span class="mi">loading…</span></div>' +
       '</div>' +
       '<div class="lane"><canvas class="wave"></canvas></div>';
 
@@ -543,6 +550,10 @@
     el.btnLoop.classList.toggle('on', on);
     if (engine) engine.loop = on;
   });
+  el.btnReload.addEventListener('click', function () {
+    var src = urlFromHash();
+    if (src) load(src);
+  });
 
   el.masterVol.addEventListener('input', function () {
     var db = Number(el.masterVol.value);
@@ -588,7 +599,7 @@
 
     rows.forEach(function (r) {
       if (!r.track || !r.meterBar) return;
-      r.meterBar.style.width = meterWidth(engine.peakOf(r.track.analyser)) + '%';
+      r.meterBar.style.height = (100 - meterWidth(engine.peakOf(r.track.analyser))) + '%';
     });
 
     // keep the playhead in view while playing
