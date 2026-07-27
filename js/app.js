@@ -307,6 +307,7 @@
     el.lanes.innerHTML = '';
     duration = 0;
     show(el.daw, false);
+    show(el.btnReload, false);
     setPlayUI(false);
     el.playhead.style.opacity = 0;
   }
@@ -315,6 +316,7 @@
     show(el.daw, true);
     show(el.empty, false);
     show(el.setup, false);
+    show(el.btnReload, true);
     el.playhead.style.opacity = 1;
   }
 
