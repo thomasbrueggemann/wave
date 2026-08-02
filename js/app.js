@@ -196,7 +196,8 @@
 
     teardown();
     el.statusList.innerHTML = '';
-    showStatus('Reading Drive', 'Resolving ' + parsed.id + '…');
+    show(el.status, false);
+    show(el.empty, false);
     document.title = 'WAVE — loading…';
 
     resolve(parsed)
