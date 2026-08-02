@@ -140,27 +140,17 @@ WAVE.drive = (function () {
     return page(null);
   }
 
-  // Walks a folder, collecting audio files. Subfolders are flattened, depth-first.
-  function listAudioFiles(folderId, maxDepth) {
-    maxDepth = maxDepth == null ? 2 : maxDepth;
-    var found = [];
-
-    function walk(id, depth, prefix) {
-      return listChildren(id).then(function (files) {
-        var subs = [];
-        files.forEach(function (f) {
-          if (isFolder(f)) { if (depth < maxDepth) subs.push(f); return; }
-          if (isAudio(f)) { f.path = prefix; found.push(f); }
-        });
-        return subs.reduce(function (chain, sub) {
-          return chain.then(function () {
-            return walk(sub.id, depth + 1, prefix ? prefix + '/' + sub.name : sub.name);
-          });
-        }, Promise.resolve());
+  // Lists a folder's direct children, split into subfolders and audio files.
+  // The tree UI expands lazily, so this is called once per visible folder.
+  function listFolder(folderId) {
+    return listChildren(folderId).then(function (files) {
+      var folders = [], audio = [];
+      files.forEach(function (f) {
+        if (isFolder(f)) folders.push(f);
+        else if (isAudio(f)) audio.push(f);
       });
-    }
-
-    return walk(folderId, 0, '').then(function () { return found; });
+      return { folders: folders, files: audio };
+    });
   }
 
   /* ── download ────────────────────────────────────────── */
@@ -200,7 +190,7 @@ WAVE.drive = (function () {
     configuredInCode: configuredInCode,
     parseShareUrl: parseShareUrl,
     getMeta: getMeta,
-    listAudioFiles: listAudioFiles,
+    listFolder: listFolder,
     isAudio: isAudio,
     isFolder: isFolder,
     download: download

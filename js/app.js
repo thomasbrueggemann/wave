@@ -18,6 +18,7 @@
     status: $('#status'), statusTitle: $('#status-title'),
     statusMsg: $('#status-msg'), statusList: $('#status-list'),
     empty: $('#empty'), daw: $('#daw'),
+    sidebar: $('#sidebar'), tree: $('#tree'),
     btnStart: $('#btn-start'), btnPlay: $('#btn-play'),
     btnStop: $('#btn-stop'), btnLoop: $('#btn-loop'), btnReload: $('#btn-reload'),
     timePos: $('#time-pos'), timeDur: $('#time-dur'),
@@ -35,6 +36,8 @@
   var duration = 0;
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
   var loadToken = 0;     // invalidates an in-flight load when a new one starts
+  var treeRoot = null;   // {id,name,folders,files,loaded} root of the folder tree
+  var activeLi = null;   // currently selected folder row
 
   var collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
@@ -199,11 +202,19 @@
     resolve(parsed)
       .then(function (res) {
         if (token !== loadToken) return;
+        if (res.kind === 'folder') {
+          buildTree(res.root);
+        } else {
+          show(el.sidebar, false);
+        }
         if (!res.files.length) {
-          showError('No audio files found',
-            res.kind === 'folder'
-              ? 'That folder holds no files WAVE recognises as audio (wav, mp3, flac, ogg, m4a, aiff, opus…). Subfolders are scanned two levels deep.'
-              : 'That file isn\'t an audio file WAVE recognises.');
+          // A folder with no direct audio still shows its tree; a non-audio
+          // file link is a genuine failure.
+          if (res.kind !== 'folder') {
+            showError('No audio files found',
+              'That file isn\'t an audio file WAVE recognises.');
+            return;
+          }
           return;
         }
         res.files.sort(function (a, b) { return collator.compare(a.name, b.name); });
@@ -219,12 +230,18 @@
       });
   }
 
-  // Figures out whether the id is a folder or a file, and returns the audio files in it.
+  // Figures out whether the id is a folder or a file. For a folder it builds the
+  // root of a lazy tree — subfolder children are fetched the first time the
+  // folder is expanded, and only direct audio files are returned for the DAW.
   function resolve(parsed) {
     return drive.getMeta(parsed.id).then(function (meta) {
       if (drive.isFolder(meta)) {
-        return drive.listAudioFiles(parsed.id).then(function (files) {
-          return { kind: 'folder', title: meta.name, files: files };
+        return drive.listFolder(parsed.id).then(function (kids) {
+          var root = {
+            id: parsed.id, name: meta.name, kind: 'folder',
+            folders: kids.folders, files: kids.files, loaded: true
+          };
+          return { kind: 'folder', title: meta.name, root: root, files: kids.files };
         });
       }
       return { kind: 'file', title: meta.name, files: drive.isAudio(meta) ? [meta] : [] };
@@ -301,15 +318,25 @@
     });
   }
 
-  function teardown() {
+  // Clears only the DAW stage so the folder tree stays visible when switching
+  // folders. teardown() — a full reset — is for starting a brand-new link.
+  function resetStage() {
     if (engine) { engine.dispose(); engine = null; }
     rows = [];
     el.lanes.innerHTML = '';
     duration = 0;
-    show(el.daw, false);
-    show(el.btnReload, false);
     setPlayUI(false);
     el.playhead.style.opacity = 0;
+  }
+
+  function teardown() {
+    resetStage();
+    show(el.daw, false);
+    show(el.btnReload, false);
+    show(el.sidebar, false);
+    el.tree.innerHTML = '';
+    treeRoot = null;
+    activeLi = null;
   }
 
   function revealDaw() {
@@ -318,6 +345,159 @@
     show(el.setup, false);
     show(el.btnReload, true);
     el.playhead.style.opacity = 1;
+  }
+
+  /* ── folder tree ──────────────────────────────────────── */
+
+  // Renders the root of a folder tree into the sidebar, expanded. Subfolder
+  // children stay un-fetched until their folder is expanded (lazy).
+  function buildTree(root) {
+    treeRoot = root;
+    activeLi = null;
+    el.tree.innerHTML = '';
+    var ul = document.createElement('ul');
+    el.tree.appendChild(ul);
+    addNode(ul, root, 0, true);
+    show(el.sidebar, true);
+    revealDaw();
+  }
+
+  function addNode(container, node, depth, expanded) {
+    var li = document.createElement('li');
+    li.className = 'treenode';
+
+    var row = document.createElement('div');
+    row.className = 'trow' + (expanded ? ' expanded' : ' collapsed');
+    row.style.paddingLeft = (depth * 16 + 8) + 'px';
+    row.dataset.depth = depth;
+
+    var caret = document.createElement('span');
+    caret.className = 'tcaret';
+
+    var nameEl = document.createElement('span');
+    nameEl.className = 'tname';
+    nameEl.textContent = node.name;
+
+    row.appendChild(caret);
+    row.appendChild(nameEl);
+
+    if (node.files && node.files.length) {
+      var cnt = document.createElement('span');
+      cnt.className = 'tcount';
+      cnt.textContent = String(node.files.length);
+      row.appendChild(cnt);
+    }
+
+    var kids = document.createElement('ul');
+    kids.hidden = !expanded;
+
+    row.addEventListener('click', function () { selectFolder(node, row); });
+    caret.addEventListener('click', function (e) {
+      e.stopPropagation();
+      expand(node, kids, row);
+    });
+
+    li.appendChild(row);
+    li.appendChild(kids);
+    container.appendChild(li);
+
+    if (expanded) renderChildren(node, kids, depth + 1);
+  }
+
+  function expand(node, kids, row) {
+    var opening = kids.hidden;
+    kids.hidden = !opening;
+    row.classList.toggle('expanded', opening);
+    row.classList.toggle('collapsed', !opening);
+    if (opening) renderChildren(node, kids, Number(row.dataset.depth) + 1);
+  }
+
+  // Fetch + render a folder's direct children the first time it's expanded.
+  function renderChildren(node, kids, depth) {
+    if (node.loaded) { fillChildren(node, kids, depth); return; }
+    if (node._loading) return;
+    node._loading = true;
+    kids.appendChild(placeholder('Fetching…'));
+    drive.listFolder(node.id)
+      .then(function (res) {
+        node._loading = false;
+        node.folders = res.folders;
+        node.files = res.files;
+        node.loaded = true;
+        fillChildren(node, kids, depth);
+      })
+      .catch(function (err) {
+        node._loading = false;
+        node.loaded = true;
+        node.folders = []; node.files = [];
+        kids.innerHTML = '';
+        kids.appendChild(placeholder('couldn\'t list'));
+      });
+  }
+
+  function fillChildren(node, kids, depth) {
+    kids.innerHTML = '';
+    if ((!node.folders || !node.folders.length) && (!node.files || !node.files.length)) {
+      kids.appendChild(placeholder('empty'));
+      return;
+    }
+    (node.folders || []).forEach(function (sub) { addNode(kids, sub, depth, false); });
+    (node.files || []).forEach(function (f) { kids.appendChild(makeLeaf(f, depth)); });
+  }
+
+  function makeLeaf(f, depth) {
+    var li = document.createElement('li');
+    li.className = 'treenode';
+    var row = document.createElement('div');
+    row.className = 'trow tleaf';
+    row.style.paddingLeft = (depth * 16 + 8) + 'px';
+    var caret = document.createElement('span');
+    caret.className = 'tcaret';
+    caret.style.visibility = 'hidden';
+    var nameEl = document.createElement('span');
+    nameEl.className = 'tname';
+    nameEl.textContent = baseName(f.name);
+    row.appendChild(caret);
+    row.appendChild(nameEl);
+    li.appendChild(row);
+    return li;
+  }
+
+  function placeholder(txt) {
+    var li = document.createElement('li');
+    li.className = 'tempty';
+    li.textContent = txt;
+    return li;
+  }
+
+  // Loading a clicked folder into the DAW: fetch its direct files (if not
+  // already loaded), then run them through the same build() pipeline.
+  function selectFolder(node, row) {
+    var token = ++loadToken;
+    if (activeLi) activeLi.classList.remove('active');
+    activeLi = row;
+    row.classList.add('active');
+
+    document.title = 'WAVE — ' + node.name;
+
+    var p = node.loaded
+      ? Promise.resolve(node)
+      : drive.listFolder(node.id).then(function (res) {
+          node.folders = res.folders;
+          node.files = res.files;
+          node.loaded = true;
+          return node;
+        });
+
+    p.then(function (n) {
+      if (token !== loadToken) return;
+      var files = n.files || [];
+      if (!files.length) return; // folder is empty — leave the current session alone
+      el.cornerName.textContent = n.name;
+      showStatus('Loading ' + files.length + ' track' + (files.length === 1 ? '' : 's'), n.name);
+      resetStage();
+      return build(files, token);
+    });
   }
 
   /* ── track rows ──────────────────────────────────────── */
